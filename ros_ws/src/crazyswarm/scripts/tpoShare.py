@@ -20,7 +20,6 @@ np.random.seed(42)
 """
 Create the targets
 """
-# TODO: how to associate these intitial positions with the actual drones?
 t1 = Target(init_state=np.array([[10], [10], [1.], [1.]]))
 t2 = Target(init_state=np.array([[-10], [10], [1.], [1.]]))
 targets = [t1, t2]
@@ -29,7 +28,6 @@ targets = [t1, t2]
 """
 Create the trackers
 """
-# TODO: how to associate these intitial positions with the actual drones?
 num_trackers = 5
 tracker_0_init_pos = np.array([0, 0, 20])
 init_inter_tracker_dist = 15
@@ -99,98 +97,201 @@ for _ in range(len(failure_nodes)):
 
 
 
-def p1():
+def p1(update_queue, state_queue, network):
+    """
+
+    :param update_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}
+                                             'new_config': adjacency_matrix,
+                                             'new_weights: {drone_id: {neighbor_id: weight, ...} ...}
+                                             }
+        where drone_id is int
+        adjacency_matrix is ndarray of shape (n, n)
+        neighbor_id is int
+        weight is float
+
+    :param state_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}
+                                             'current_config': adjacency_matrix,
+                                             'current_weights: {drone_id: {neighbor_id: weight, ...} ...}
+                                             }
+        where drone_id is int
+        adjacency_matrix is ndarray of shape (n, n)
+        neighbor_id is int
+        weight is float
+
+    :param network:
+    :return:
+    """
     print('Current pid: {}'.format(os.getpid()))
 
     #cf.cmdVelocityWorld()
 
-def p2(que):
-    global network
+def p2(state_queue, opt_queue, network, failure_nodes, rand_matrices):
+    """
+
+    :param state_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}
+                                             'current_config': adjacency_matrix,
+                                             'current_weights: {drone_id: {neighbor_id: weight, ...} ...}
+                                             }
+        where drone_id is int
+        adjacency_matrix is ndarray of shape (n, n)
+        neighbor_id is int
+        weight is float
+
+    :param opt_queue: dictionary of form {drone_id : {'cov': drone_cov, 'pos': drone_pos, 'r': drone_r}, ...
+                                          'skip_flag': skip_flag,
+                                          'failed_drone': drone_id}
+        where drone_id is int
+        drone_cov is ndarray of shape (4,4)
+        drone_pos is ndarray of shape (3,1)
+        drone_r is ndarray of shape (4, 4)
+        skip_flag is a boolean
+
+    :param network: drone network object
+    :param failure_nodes: list of nodes to apply sensor failures to throughout the simulation
+    :param rand_matrices: the noise matrix to add to the failed node
+    :return:
+    """
     print('Current pid: {}'.format(os.getpid()))
 
-    # TODO: when to apply failure
-    failed_node = failure_nodes[0]
-    fail_mat = rand_matrices[0]
+    count_failures = 0
+    while True:
+        # Get latest positions from position_queue
+        state = state_queue.get()
+        positions = state['positions']
+        current_config = state['current_config']
+        current_weights = state['current_weights']
 
-    # TODO: read vicon and set actual positions
-    # set target positions from vicon
-    t1.state = np.array([[10], [10], [1.], [1.]])
-    t2.state = np.array([[-10], [10], [1.], [1.]])
+        nodes = nx.get_node_attributes(network.network, 'node')
+        G = nx.from_numpy_matrix(current_config)
+        network.network = G
+        nx.set_node_attributes(network.network, current_weights, 'weights')
+        nx.set_node_attributes(network.network, nodes, 'node')
 
-    # set tracker positions from vicon
-    nodes = nx.get_node_attributes(network.network, 'node')
-    for n in range(num_trackers):
-        n.update_position(np.array([0, 0, 0]))
+        # randomly apply failure 50% of the time
+        if np.random.rand() > 0.5:
+            failed_node = failure_nodes[count_failures]
+            fail_mat = rand_matrices[count_failures]
+            nodes[failed_node].R += fail_mat
+            count_failures += 1
 
-    # simulate local KF
-    skip_config_generation = False
-    for id, n in nodes.items():
-        n.predict(len(nodes))
-        ms = n.get_measurements([t1, t2])
-        n.update(ms)
+        # set current tracker positions from data in queue
 
-        # set flag if one of the trackers cannot see target
-        if n.missed_observation:
-            skip_config_generation = True
+        for id, n in nodes.items():
+            n.update_position(positions[id])
 
-    # initialize consensus
-    for id, n in nodes.items():
-        n.init_consensus()
+        # simulate local KF
+        skip_config_generation = False
+        for id, n in nodes.items():
+            n.predict(len(nodes))
+            ms = n.get_measurements([t1, t2])
+            n.update(ms)
 
-    # TODO: pass covariances, positions, Rs, flag, and fail information to queue
-    for id, n in nodes.items():
-        que.put(n.omega)
-        que.put(n.position)
-        que.put(n.R)
+            # set flag if one of the trackers cannot see target
+            if n.missed_observation:
+                skip_config_generation = True
 
-    que.put(skip_config_generation)
-    que.put(failed_node)
+        # initialize consensus
+        for id, n in nodes.items():
+            n.init_consensus()
 
-    # push q2
-    #que.put()
+        opt_info = {}
+        for id, n in nodes.items():
+            opt_info[str(id)] = {'cov': n.omega,
+                                 'pos': n.position,
+                                 'r': n.R}
+        opt_info['skip_flag'] = skip_config_generation
+        opt_info['failed_drone'] = failed_node
+
+        opt_queue.put(opt_info)
+
+        if count_failures >= len(failure_nodes):
+            break
+
+    opt_queue.put('END')
 
 
-def p3(que):
+
+def p3(opt_que, update_queue, network):
+    """
+
+    :param opt_queue: dictionary of form {drone_id : {'cov': drone_cov, 'pos': drone_pos, 'r': drone_r}, ...
+                                        'skip_flag': skip_flag,
+                                        'failed_drone': drone_id}
+        where drone_id is int
+        drone_cov is ndarray of shape (4,4)
+        drone_pos is ndarray of shape (3,1)
+        drone_r is ndarray of shape (4, 4)
+        skip_flag is a boolean
+    :param update_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}
+                                             'new_config': adjacency_matrix,
+                                             'new_weights: {drone_id: {neighbor_id: weight, ...} ...}
+                                             }
+        where drone_id is int
+        adjacency_matrix is ndarray of shape (n, n)
+        neighbor_id is int
+        weight is float
+    :param network:
+    :return:
+    """
     print('Current pid: {}'.format(os.getpid()))
 
-    global network
-    nodes = nx.get_node_attributes(network.network, 'node')
-    current_weights = nx.get_node_attributes(network.network, 'weights')
+    while True:
+        # Get latest optimization information
+        opt_info = opt_que.get()
 
-    # read from queue
-    covariance_data = []
-    positions = []
-    Rs = []
-    for _ in range(len(nodes)):
-        c = que.get()
-        trace_c = np.trace(c)
-        covariance_data.append(trace_c)
-        positions.append(que.get())
-        Rs.append(que.get())
-    skip_config_generation = que.get()
-    failed_node = que.get()
+        if opt_info == 'END':
+            break
 
-    if skip_config_generation:
-        # do formation synthesis step only
-        coords = generate_coords(network.network.adjacency_matrix(),
-                                 positions, fov, Rs)
-    else:
-        # do optimization
-        new_config, new_weights = agent_opt(network.network.adjacency_matrix(),
-                                            current_weights,
-                                            covariance_data,
-                                            failed_node)
-        # do formation synthesis
-        coords = generate_coords(new_config,
-                                 positions, fov, Rs)
-        nx.set_node_attributes(network.network, new_weights, 'weights')
+        nodes = nx.get_node_attributes(network.network, 'node')
+        current_weights = nx.get_node_attributes(network.network, 'weights')
 
+        # read from queue
+        covariance_data = []
+        positions = []
+        Rs = []
+        for id, n in nodes.items():
+            c = opt_info[str(id)]['cov']
+            n.omega = c
+            trace_c = np.trace(c)
+            covariance_data.append(trace_c)
 
-    # TODO: send coords
-    #   send goTo
+            n.update_position(opt_info[str(id)]['pos'])
+            positions.append(opt_info[str(id)]['pos'])
+
+            n.R = opt_info[str(id)]['r']
+            Rs.append(opt_info[str(id)]['r'])
+
+        skip_config_generation = opt_info['skip_flag']
+        failed_node = opt_info['failed_drone']
+
+        if skip_config_generation:
+            # do formation synthesis step only
+            coords = generate_coords(network.network.adjacency_matrix(),
+                                     positions, fov, Rs)
+            new_config = network.network.adjacency_matrix()
+            new_weights = current_weights
+        else:
+            # do optimization
+            new_config, new_weights = agent_opt(network.network.adjacency_matrix(),
+                                                current_weights,
+                                                covariance_data,
+                                                failed_node)
+            # do formation synthesis
+            coords = generate_coords(new_config,
+                                     positions, fov, Rs)
+            nx.set_node_attributes(network.network, new_weights, 'weights')
+
+        update = {'new_coords': coords,
+                  'new_config': new_config,
+                  'new_weights': new_weights}
+
+        update_queue.put(update)
+
+    update_queue.put('END')
 
 
 def main():
+    # TODO: instantiate global variables (network, failure_nodes, rand_matrices) in here
     qCmd = Queue()
     q1 = Queue()
     process1=Process(target=p1,args=(,))
