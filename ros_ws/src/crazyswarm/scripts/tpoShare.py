@@ -17,106 +17,15 @@ from opt_utils.formation import generate_coords
 
 np.random.seed(42)
 
-"""
-Create the targets
-"""
-t1 = Target(init_state=np.array([[10], [10], [1.], [1.]]))
-t2 = Target(init_state=np.array([[-10], [10], [1.], [1.]]))
-targets = [t1, t2]
-
-
-"""
-Create the trackers
-"""
-num_trackers = 5
-tracker_0_init_pos = np.array([0, 0, 20])
-init_inter_tracker_dist = 15
-fov = 30
-
-node_attrs = {}
-
-for n in range(num_trackers):
-    pos = tracker_0_init_pos + np.array([n*init_inter_tracker_dist, 0, 0])
-    region = [(pos[0] - fov, pos[0] + fov),
-              (pos[1] - fov, pos[1] + fov)]
-
-    node_attrs[n] = DKFNode(n,
-                            [deepcopy(t) for t in targets],
-                            position=pos,
-                            region=region)
-
-
-"""
-Create inputs for the trackers
-"""
-# TODO:
-
-
-
-"""
-Create the network graph for the trackers
-"""
-# initialize in straight line
-G = nx.Graph()
-for i in range(num_trackers - 1):
-    G.add_edge(i, i + 1)
-
-weight_attrs = {}
-for i in range(num_trackers):
-    weight_attrs[i] = {}
-    self_degree = G.degree(i)
-    metropolis_weights = []
-    for n in G.neighbors(i):
-        degree = G.degree(n)
-        mw = 1 / (1 + max(self_degree, degree))
-        weight_attrs[i][n] = mw
-        metropolis_weights.append(mw)
-    weight_attrs[i][i] = 1 - sum(metropolis_weights)
-
-network = DKFNetwork(node_attrs,
-                     weight_attrs,
-                     G,
-                     targets)
-
-
-"""
-Create fixed failure sequence
-"""
-# set random sequence of drones to experience failure
-num_failures = 7
-failure_nodes = np.random.randint(5, size=num_failures)
-
-# generate random matrices to add to R matrix of failed drone
-r_mat_size = DEFAULT_H.shape[0]
-
-rand_matrices = []
-for _ in range(len(failure_nodes)):
-    r = np.random.rand(r_mat_size, r_mat_size)
-    rpd = np.dot(r, r.T)
-    rand_matrices.append(rpd)
-
-
 
 def p1(update_queue, state_queue):
     """
 
-    :param update_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}
-                                             'new_config': adjacency_matrix,
-                                             'new_weights: {drone_id: {neighbor_id: weight, ...} ...}
-                                             }
+    :param update_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}}
         where drone_id is int
-        adjacency_matrix is ndarray of shape (n, n)
-        neighbor_id is int
-        weight is float
 
-    :param state_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}
-                                             'current_config': adjacency_matrix,
-                                             'current_weights: {drone_id: {neighbor_id: weight, ...} ...}
-                                             }
+    :param state_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}}
         where drone_id is int
-        adjacency_matrix is ndarray of shape (n, n)
-        neighbor_id is int
-        weight is float
 
     :param network:
     :return:
@@ -150,14 +59,16 @@ def p1(update_queue, state_queue):
         state_queue.put(new_state)
         timeHelper.sleepForRate(30)
 
-def p2(state_queue, opt_queue, network, failure_nodes, rand_matrices):
+
+def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matrices):
     """
 
-    :param state_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}
-                                             'current_config': adjacency_matrix,
-                                             'current_weights: {drone_id: {neighbor_id: weight, ...} ...}
-                                             }
+    :param state_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}}
         where drone_id is int
+
+    :param weights_queue: dictionary of form {'new_config': adjacency_matrix,
+                                             'new_weights: {drone_id: {neighbor_id: weight, ...} ...}
+                                             }
         adjacency_matrix is ndarray of shape (n, n)
         neighbor_id is int
         weight is float
@@ -182,9 +93,11 @@ def p2(state_queue, opt_queue, network, failure_nodes, rand_matrices):
     while True:
         # Get latest positions from position_queue
         state = state_queue.get()
-        positions = state['positions']
-        current_config = state['current_config']
-        current_weights = state['current_weights']
+        positions = state['coords']
+
+        weights = weights_queue.get()
+        current_config = weights['new_config']
+        current_weights = weights['new_weights']
 
         nodes = nx.get_node_attributes(network.network, 'node')
         G = nx.from_numpy_matrix(current_config)
@@ -198,6 +111,8 @@ def p2(state_queue, opt_queue, network, failure_nodes, rand_matrices):
             fail_mat = rand_matrices[count_failures]
             nodes[failed_node].R += fail_mat
             count_failures += 1
+        else:
+            failed_node = None
 
         # set current tracker positions from data in queue
 
@@ -236,7 +151,7 @@ def p2(state_queue, opt_queue, network, failure_nodes, rand_matrices):
 
 
 
-def p3(opt_que, update_queue, network):
+def p3(opt_que, update_queue, weights_queue, network):
     """
 
     :param opt_queue: dictionary of form {drone_id : {'cov': drone_cov, 'pos': drone_pos, 'r': drone_r}, ...
@@ -288,6 +203,8 @@ def p3(opt_que, update_queue, network):
 
         skip_config_generation = opt_info['skip_flag']
         failed_node = opt_info['failed_drone']
+        if failed_node is None:
+            skip_config_generation = True
 
         if skip_config_generation:
             # do formation synthesis step only
@@ -306,24 +223,108 @@ def p3(opt_que, update_queue, network):
                                      positions, fov, Rs)
             nx.set_node_attributes(network.network, new_weights, 'weights')
 
-        update = {'new_coords': coords,
-                  'new_config': new_config,
-                  'new_weights': new_weights}
-
+        update = {'new_coords': coords}
         update_queue.put(update)
+
+        weight_update = {'new_config': new_config,
+                         'new_weights': new_weights}
+        weights_queue.put(weight_update)
 
     update_queue.put('END')
 
 
 def main():
-    # TODO: instantiate global variables (network, failure_nodes, rand_matrices) in here
-    qCmd = Queue()
-    q1 = Queue()
-    process1=Process(target=p1,args=())
-    process2=Process(target=p2,args=(q2,))
-    process3=Process(target=p3,args=(q2,))
-    process1.start()
+
+    # TODO: assign targets trackers based on initial position
+
+    """
+    Create the targets
+    """
+    t1 = Target(init_state=np.array([[10], [10], [1.], [1.]]))
+    t2 = Target(init_state=np.array([[-10], [10], [1.], [1.]]))
+    targets = [t1, t2]
+
+    """
+    Create the trackers
+    """
+    num_trackers = 5
+    tracker_0_init_pos = np.array([0, 0, 20])
+    init_inter_tracker_dist = 15
+    fov = 30
+
+    node_attrs = {}
+
+    for n in range(num_trackers):
+        pos = tracker_0_init_pos + np.array(
+            [n * init_inter_tracker_dist, 0, 0])
+        region = [(pos[0] - fov, pos[0] + fov),
+                  (pos[1] - fov, pos[1] + fov)]
+
+        node_attrs[n] = DKFNode(n,
+                                [deepcopy(t) for t in targets],
+                                position=pos,
+                                region=region)
+
+    """
+    Create inputs for the trackers
+    """
+    # TODO:
+
+
+
+    """
+    Create the network graph for the trackers
+    """
+    # initialize in straight line
+    G = nx.Graph()
+    for i in range(num_trackers - 1):
+        G.add_edge(i, i + 1)
+
+    weight_attrs = {}
+    for i in range(num_trackers):
+        weight_attrs[i] = {}
+        self_degree = G.degree(i)
+        metropolis_weights = []
+        for n in G.neighbors(i):
+            degree = G.degree(n)
+            mw = 1 / (1 + max(self_degree, degree))
+            weight_attrs[i][n] = mw
+            metropolis_weights.append(mw)
+        weight_attrs[i][i] = 1 - sum(metropolis_weights)
+
+    network = DKFNetwork(node_attrs,
+                         weight_attrs,
+                         G,
+                         targets)
+
+    """
+    Create fixed failure sequence
+    """
+    # set random sequence of drones to experience failure
+    num_failures = 7
+    failure_nodes = np.random.randint(5, size=num_failures)
+
+    # generate random matrices to add to R matrix of failed drone
+    r_mat_size = DEFAULT_H.shape[0]
+
+    rand_matrices = []
+    for _ in range(len(failure_nodes)):
+        r = np.random.rand(r_mat_size, r_mat_size)
+        rpd = np.dot(r, r.T)
+        rand_matrices.append(rpd)
+
+    state_queue = Queue()  # p1 to p2
+    update_queue = Queue(1)  # p3 to p1
+    weights_queue = Queue(1)  # p3 to p2
+    opt_queue = Queue(1)  # p2 to p3
+
+    process2=Process(target=p2,args=(state_queue, weights_queue, opt_queue,
+                                     network, failure_nodes, rand_matrices))
+    process3=Process(target=p3,args=(opt_queue, update_queue, weights_queue, network))
+
     process2.start()
     process3.start()
+
+    p1(update_queue, state_queue)
 
 main()
