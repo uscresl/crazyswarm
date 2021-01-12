@@ -97,7 +97,7 @@ for _ in range(len(failure_nodes)):
 
 
 
-def p1(update_queue, state_queue, network):
+def p1(update_queue, state_queue):
     """
 
     :param update_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}
@@ -123,7 +123,32 @@ def p1(update_queue, state_queue, network):
     """
     print('Current pid: {}'.format(os.getpid()))
 
-    #cf.cmdVelocityWorld()
+
+    #Set up for the crazyswarm
+    swarm = Crazyswarm()
+    timeHelper = swarm.timeHelper
+    allcfs = swarm.allcfs
+
+    allcfs.takeoff(targetHeight=1.0, duration=1.0+1.0)
+    timeHelper.sleep(1.5)
+
+    byIdDict = allcfs.crazyfliesById
+
+    while True:
+        # Get latest optimization information
+        if not update_queue.empty():
+            update_cmd = update_queue.get()
+            if update_cmd == "STOP":
+                break
+            else:
+                for drone_id, drone_pos in update_cmd.items():
+                    byIdDict[drone_id].goTo(drone_pos, 0, 1.0)
+        
+        new_state = {}
+        for droneId in byIdDict.keys():
+            new_state[droneId]= byIdDict[droneId].position()
+        state_queue.put(new_state)
+        timeHelper.sleepForRate(30)
 
 def p2(state_queue, opt_queue, network, failure_nodes, rand_matrices):
     """
@@ -294,7 +319,7 @@ def main():
     # TODO: instantiate global variables (network, failure_nodes, rand_matrices) in here
     qCmd = Queue()
     q1 = Queue()
-    process1=Process(target=p1,args=(,))
+    process1=Process(target=p1,args=())
     process2=Process(target=p2,args=(q2,))
     process3=Process(target=p3,args=(q2,))
     process1.start()
