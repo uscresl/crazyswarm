@@ -70,7 +70,8 @@ def propose(current_coords, delta):
     :return: dictionary of proposed coordinates for nodes
     """
     propose_coords = deepcopy(current_coords)
-    node = np.random.choice(list(current_coords.keys()))
+    # node = np.random.choice(list(current_coords.keys()))
+    node = np.random.choice(list(range(5)))
     dir = np.random.choice(3)
     d = np.random.uniform(-1 * delta, delta)
 

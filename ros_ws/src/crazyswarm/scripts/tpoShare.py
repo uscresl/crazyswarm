@@ -48,11 +48,11 @@ def p1(update_queue, state_queue):
         if not update_queue.empty():
             update_cmd = update_queue.get()["coords"]
             print("updatex")
-            if update_cmd == "STOP":
+            if update_cmd == "END":
                 break
             else:
                 for drone_id, drone_pos in update_cmd.items():
-                    byIdDict[drone_id].goTo(drone_pos, 0, 1.0)
+                    byIdDict[drone_id].goTo(drone_pos, 0, 5.0)
         
         new_state = {}
         for droneId in byIdDict.keys():
@@ -96,10 +96,13 @@ def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matri
         state = state_queue.get()
         positions = state['coords']
         print("p2 while loop")
-        weights = weights_queue.get()
-        
-        current_config = weights['new_config']
-        current_weights = weights['new_weights']
+        try:
+            weights = weights_queue.get(block=False)
+            current_config = weights['new_config']
+            current_weights = weights['new_weights']
+        except:
+            current_config = network.adjacency_matrix()
+            current_weights = nx.get_node_attributes(network.network, 'weights')
 
         nodes = nx.get_node_attributes(network.network, 'node')
         G = nx.from_numpy_matrix(current_config)
@@ -117,15 +120,16 @@ def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matri
             failed_node = None
 
         # set current tracker positions from data in queue
-
-        for id, n in nodes.items():
-            n.update_position(positions[id])
+        # for id, n in nodes.items():
+        #     n.update_position(positions[id])
+        for i in range(1, 5):
+            nodes[i].update_position(positions[i])
 
         # simulate local KF
         skip_config_generation = False
         for id, n in nodes.items():
             n.predict(len(nodes))
-            ms = n.get_measurements([t1, t2])
+            ms = n.get_measurements(network.targets)
             n.update(ms)
 
             # set flag if one of the trackers cannot see target
@@ -176,6 +180,7 @@ def p3(opt_que, update_queue, weights_queue, network):
     :return:
     """
     print('Current pid: {}'.format(os.getpid()))
+    fov = 30
 
     while True:
         # Get latest optimization information
@@ -191,45 +196,55 @@ def p3(opt_que, update_queue, weights_queue, network):
         covariance_data = []
         positions = []
         Rs = []
-        for id, n in nodes.items():
-            c = opt_info[str(id)]['cov']
-            n.omega = c
-            trace_c = np.trace(c)
-            covariance_data.append(trace_c)
 
-            n.update_position(opt_info[str(id)]['pos'])
-            positions.append(opt_info[str(id)]['pos'])
+        # for id, n in nodes.items():
+        #     c = opt_info[str(id)]['cov']
+        #     n.omega = c
+        #     trace_c = np.trace(c)
+        #     covariance_data.append(trace_c)
+        #
+        #     n.update_position(opt_info[str(id)]['pos'])
+        #     positions.append(opt_info[str(id)]['pos'])
+        #
+        #     n.R = opt_info[str(id)]['r']
+        #     Rs.append(opt_info[str(id)]['r'])
+        #
+        # skip_config_generation = opt_info['skip_flag']
+        # failed_node = opt_info['failed_drone']
+        # if failed_node is None:
+        #     skip_config_generation = True
+        #
+        # if skip_config_generation:
+        #     # do formation synthesis step only
+        #     coords = generate_coords(network.adjacency_matrix(),
+        #                              positions, fov, Rs)
+        #     new_config = network.adjacency_matrix()
+        #     new_weights = current_weights
+        # else:
+        #     # do optimization
+        #     new_config, new_weights = agent_opt(network.network.adjacency_matrix(),
+        #                                         current_weights,
+        #                                         covariance_data,
+        #                                         failed_node)
+        #     # do formation synthesis
+        #     coords = generate_coords(new_config,
+        #                              positions, fov, Rs)
+        #     nx.set_node_attributes(network.network, new_weights, 'weights')
 
-            n.R = opt_info[str(id)]['r']
-            Rs.append(opt_info[str(id)]['r'])
+        print("p3 sending coords")
+        coords = {1: np.array([0., 0., 0]),
+                  2: np.array([1., 0., 0]),
+                  3: np.array([2., 0., 0]),
+                  4: np.array([3., 0., 0])
+                  }
 
-        skip_config_generation = opt_info['skip_flag']
-        failed_node = opt_info['failed_drone']
-        if failed_node is None:
-            skip_config_generation = True
-
-        if skip_config_generation:
-            # do formation synthesis step only
-            coords = generate_coords(network.network.adjacency_matrix(),
-                                     positions, fov, Rs)
-            new_config = network.network.adjacency_matrix()
-            new_weights = current_weights
-        else:
-            # do optimization
-            new_config, new_weights = agent_opt(network.network.adjacency_matrix(),
-                                                current_weights,
-                                                covariance_data,
-                                                failed_node)
-            # do formation synthesis
-            coords = generate_coords(new_config,
-                                     positions, fov, Rs)
-            nx.set_node_attributes(network.network, new_weights, 'weights')
-
-        update = {'new_coords': coords}
+        update = {'coords': coords}
         update_queue.put(update)
 
-        weight_update = {'new_config': new_config,
-                         'new_weights': new_weights}
+        # weight_update = {'new_config': new_config,
+        #                  'new_weights': new_weights}
+        weight_update = {'new_config': network.adjacency_matrix(),
+                         'new_weights': current_weights}
         weights_queue.put(weight_update)
 
     update_queue.put('END')
