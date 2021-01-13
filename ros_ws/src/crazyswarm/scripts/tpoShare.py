@@ -46,7 +46,8 @@ def p1(update_queue, state_queue):
     while True:
         # Get latest optimization information
         if not update_queue.empty():
-            update_cmd = update_queue.get()
+            update_cmd = update_queue.get()["coords"]
+            print("updatex")
             if update_cmd == "STOP":
                 break
             else:
@@ -56,7 +57,7 @@ def p1(update_queue, state_queue):
         new_state = {}
         for droneId in byIdDict.keys():
             new_state[droneId]= byIdDict[droneId].position()
-        state_queue.put(new_state)
+        state_queue.put({'coords': new_state})
         timeHelper.sleepForRate(30)
 
 
@@ -94,8 +95,9 @@ def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matri
         # Get latest positions from position_queue
         state = state_queue.get()
         positions = state['coords']
-
+        print("p2 while loop")
         weights = weights_queue.get()
+        
         current_config = weights['new_config']
         current_weights = weights['new_weights']
 
@@ -321,7 +323,6 @@ def main():
     process2=Process(target=p2,args=(state_queue, weights_queue, opt_queue,
                                      network, failure_nodes, rand_matrices))
     process3=Process(target=p3,args=(opt_queue, update_queue, weights_queue, network))
-
     process2.start()
     process3.start()
 
