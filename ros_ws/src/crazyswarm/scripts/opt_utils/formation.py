@@ -70,8 +70,8 @@ def propose(current_coords, delta):
     :return: dictionary of proposed coordinates for nodes
     """
     propose_coords = deepcopy(current_coords)
-    # node = np.random.choice(list(current_coords.keys()))
-    node = np.random.choice(list(range(5)))
+    node = np.random.choice(list(current_coords.keys()))
+    # node = np.random.choice(list(range(5)))
     dir = np.random.choice(3)
     d = np.random.uniform(-1 * delta, delta)
 
@@ -210,7 +210,8 @@ def Hc(drone_pos, fov_radius, focal_length=0.04, sigma=0.3, R=30, kappa=0.5):
     b2 = R
     c2 = 2 * (sigma ** 2)
 
-    scheme = quadpy.disk.lether(6)
+    # scheme = quadpy.disk.lether(6)
+    scheme = quadpy.s2.get_good_scheme(6)
     val = scheme.integrate(lambda p: (fpers(p[0], a1, b1, c1) *
                                       fres(p[0], a2, b2, c2)),
                            [x, y], r
@@ -255,7 +256,8 @@ def Ho(drone1_pos, drone2_pos, fov1_radius, fov2_radius, focal_length=0.04, sigm
     b4 = R
     c4 = 2 * (sigma ** 2)
 
-    scheme = quadpy.disk.lether(6)
+    # scheme = quadpy.disk.lether(6)
+    scheme = quadpy.s2.get_good_scheme(6)
     val1 = scheme.integrate(lambda x: (fpers(x[0], a1, b1, c1) *
                                        fres(x[0], a2, b2, c2)),
                            [mid_x, mid_y], overlap

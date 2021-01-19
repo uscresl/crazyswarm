@@ -34,7 +34,7 @@ def goCircle(timeHelper, cf, startTime, totalTime=4, radius=1, kPosition=1):
     timeHelper.sleepForRate(sleepRate)
 
 
-def p1(update_queue, state_queue):
+def p1(swarm, update_queue, state_queue):
     """
 
     :param update_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}}
@@ -48,9 +48,7 @@ def p1(update_queue, state_queue):
     """
     print('Current pid: {}'.format(os.getpid()))
 
-
     #Set up for the crazyswarm
-    swarm = Crazyswarm()
     timeHelper = swarm.timeHelper
     allcfs = swarm.allcfs
 
@@ -133,8 +131,8 @@ def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matri
         nx.set_node_attributes(network.network, current_weights, 'weights')
         nx.set_node_attributes(network.network, nodes, 'node')
 
-        # randomly apply failure 50% of the time
-        if np.random.rand() > 0.5:
+        # randomly apply failure 80% of the time
+        if np.random.rand() > 0.8:
             failed_node = failure_nodes[count_failures]
             fail_mat = rand_matrices[count_failures]
             nodes[failed_node].R += fail_mat
@@ -143,10 +141,8 @@ def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matri
             failed_node = None
 
         # set current tracker positions from data in queue
-        # for id, n in nodes.items():
-        #     n.update_position(positions[id])
-        for i in range(1, 5):
-            nodes[i].update_position(positions[i])
+        for id, n in nodes.items():
+            n.update_position(positions[id+1])
 
         # simulate local KF
         skip_config_generation = False
@@ -203,11 +199,15 @@ def p3(opt_que, update_queue, weights_queue, network):
     :return:
     """
     print('Current pid: {}'.format(os.getpid()))
-    fov = 30
+    num_nodes = len(nx.get_node_attributes(network.network, 'node'))
+    fov = {}
+    for n in range(num_nodes):
+        fov[n] = 5
 
     while True:
         # Get latest optimization information
         opt_info = opt_que.get()
+        print("got opt info")
 
         if opt_info == 'END':
             break
@@ -217,57 +217,66 @@ def p3(opt_que, update_queue, weights_queue, network):
 
         # read from queue
         covariance_data = []
-        positions = []
+        positions = {}
         Rs = []
 
-        # for id, n in nodes.items():
-        #     c = opt_info[str(id)]['cov']
-        #     n.omega = c
-        #     trace_c = np.trace(c)
-        #     covariance_data.append(trace_c)
-        #
-        #     n.update_position(opt_info[str(id)]['pos'])
-        #     positions.append(opt_info[str(id)]['pos'])
-        #
-        #     n.R = opt_info[str(id)]['r']
-        #     Rs.append(opt_info[str(id)]['r'])
-        #
-        # skip_config_generation = opt_info['skip_flag']
-        # failed_node = opt_info['failed_drone']
-        # if failed_node is None:
-        #     skip_config_generation = True
-        #
-        # if skip_config_generation:
-        #     # do formation synthesis step only
-        #     coords = generate_coords(network.adjacency_matrix(),
-        #                              positions, fov, Rs)
-        #     new_config = network.adjacency_matrix()
-        #     new_weights = current_weights
-        # else:
-        #     # do optimization
-        #     new_config, new_weights = agent_opt(network.network.adjacency_matrix(),
-        #                                         current_weights,
-        #                                         covariance_data,
-        #                                         failed_node)
-        #     # do formation synthesis
-        #     coords = generate_coords(new_config,
-        #                              positions, fov, Rs)
-        #     nx.set_node_attributes(network.network, new_weights, 'weights')
+        for id, n in nodes.items():
+            c = opt_info[str(id)]['cov']
+            n.omega = c
+            trace_c = np.trace(c)
+            covariance_data.append(trace_c)
+
+            n.update_position(opt_info[str(id)]['pos'])
+            positions[id] = opt_info[str(id)]['pos']
+
+            n.R = opt_info[str(id)]['r']
+            Rs.append(opt_info[str(id)]['r'])
+
+        skip_config_generation = opt_info['skip_flag']
+        failed_node = opt_info['failed_drone']
+        if failed_node is None:
+            skip_config_generation = True
+
+        if skip_config_generation:
+            # do formation synthesis step only
+            coords, _ = generate_coords(network.adjacency_matrix(),
+                                     positions, fov, Rs,
+                                        bbox=np.array(
+                                            [(-5, 5), (-5, 5), (0, 5)]),
+                                        delta=3, safe_dist=1, connect_dist=2)
+            new_config = network.adjacency_matrix()
+            new_weights = current_weights
+        else:
+            # do optimization
+            new_config, new_weights = agent_opt(network.network.adjacency_matrix(),
+                                                current_weights,
+                                                covariance_data,
+                                                failed_node)
+            # do formation synthesis
+            coords, _ = generate_coords(new_config,
+                                     positions, fov, Rs,
+                                        bbox=np.array(
+                                            [(-5, 5), (-5, 5), (0, 5)]),
+                                        delta=3, safe_dist=1, connect_dist=2)
+            nx.set_node_attributes(network.network, new_weights, 'weights')
 
         print("p3 sending coords")
-        coords = {1: np.array([0., 0., 0]),
-                  2: np.array([1., 0., 0]),
-                  3: np.array([2., 0., 0]),
-                  4: np.array([3., 0., 0])
-                  }
-
-        update = {'coords': coords}
+        send_coords = {}
+        for id, c in coords.items():
+            send_coords[id+1] = c
+        # coords = {1: np.array([0., 0., 0]),
+        #           2: np.array([1., 0., 0]),
+        #           3: np.array([2., 0., 0]),
+        #           4: np.array([3., 0., 0])
+        #           }
+        print(coords)
+        update = {'coords': send_coords}
         update_queue.put(update)
 
-        # weight_update = {'new_config': new_config,
-        #                  'new_weights': new_weights}
-        weight_update = {'new_config': network.adjacency_matrix(),
-                         'new_weights': current_weights}
+        weight_update = {'new_config': new_config,
+                         'new_weights': new_weights}
+        # weight_update = {'new_config': network.adjacency_matrix(),
+        #                  'new_weights': current_weights}
         weights_queue.put(weight_update)
 
     update_queue.put('END')
@@ -275,28 +284,35 @@ def p3(opt_que, update_queue, weights_queue, network):
 
 def main():
 
-    # TODO: assign targets trackers based on initial position
+    swarm = Crazyswarm()
+    allcfs = swarm.allcfs
+    byIdDict = allcfs.crazyfliesById
+
+    t1_pos = byIdDict[6].position()
+    t2_pos = byIdDict[7].position()
 
     """
     Create the targets
     """
-    t1 = Target(init_state=np.array([[10], [10], [1.], [1.]]))
-    t2 = Target(init_state=np.array([[-10], [10], [1.], [1.]]))
+    t1 = Target(init_state=np.array([[t1_pos[0]], [t1_pos[1]], [1.], [1.]]))
+    t2 = Target(init_state=np.array([[t2_pos[0]], [t2_pos[2]], [1.], [1.]]))
     targets = [t1, t2]
 
     """
     Create the trackers
     """
     num_trackers = 5
-    tracker_0_init_pos = np.array([0, 0, 20])
-    init_inter_tracker_dist = 15
-    fov = 30
+    # tracker_0_init_pos = np.array([0, 0, 20])
+    # init_inter_tracker_dist = 15
+    # fov = 30
+    fov = 5
 
     node_attrs = {}
 
     for n in range(num_trackers):
-        pos = tracker_0_init_pos + np.array(
-            [n * init_inter_tracker_dist, 0, 0])
+        # pos = tracker_0_init_pos + np.array(
+        #     [n * init_inter_tracker_dist, 0, 0])
+        pos = byIdDict[n+1].position()
         region = [(pos[0] - fov, pos[0] + fov),
                   (pos[1] - fov, pos[1] + fov)]
 
@@ -304,12 +320,6 @@ def main():
                                 [deepcopy(t) for t in targets],
                                 position=pos,
                                 region=region)
-
-    """
-    Create inputs for the trackers
-    """
-    # TODO:
-
 
 
     """
@@ -364,6 +374,6 @@ def main():
     process2.start()
     process3.start()
 
-    p1(update_queue, state_queue)
+    p1(swarm, update_queue, state_queue)
 
 main()
