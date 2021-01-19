@@ -14,8 +14,24 @@ from kf_utils.target import Target, DEFAULT_H
 from opt_utils.optimization import agent_opt
 from opt_utils.formation import generate_coords
 
-
 np.random.seed(42)
+
+Z = 1.0
+sleepRate = 30
+
+def goCircle(timeHelper, cf, startTime, totalTime=4, radius=1, kPosition=1):
+    startPos = cf.initialPosition + np.array([0, 0, Z])
+    center_circle = startPos - np.array([radius, 0, 0])
+
+    time = timeHelper.time() - startTime
+    omega = 2 * np.pi / totalTime
+    vx = -radius * omega * np.sin(omega * time)  
+    vy = radius * omega * np.cos(omega * time)
+    desiredPos = center_circle + radius * np.array(
+        [np.cos(omega * time), np.sin(omega * time), 0])
+    errorX = desiredPos - cf.position() 
+    cf.cmdVelocityWorld(np.array([vx, vy, 0] + kPosition * errorX), yawRate=0)
+    timeHelper.sleepForRate(sleepRate)
 
 
 def p1(update_queue, state_queue):
@@ -38,27 +54,34 @@ def p1(update_queue, state_queue):
     timeHelper = swarm.timeHelper
     allcfs = swarm.allcfs
 
-    allcfs.takeoff(targetHeight=1.0, duration=1.0+1.0)
+    allcfs.takeoff(targetHeight=1.0, duration=1.0+Z)
     timeHelper.sleep(1.5)
 
     byIdDict = allcfs.crazyfliesById
 
+    startTime = timeHelper.time()
+
     while True:
+        #non-tracker go circle
+        goCircle(timeHelper, byIdDict[6], startTime)
+        goCircle(timeHelper, byIdDict[7], startTime)
+
         # Get latest optimization information
         if not update_queue.empty():
-            update_cmd = update_queue.get()["coords"]
-            print("updatex")
+            update_cmd = update_queue.get()
             if update_cmd == "END":
+                allcfs.land(targetHeight=0.06, duration=2.0)
+                timeHelper.sleep(2.0)
                 break
             else:
-                for drone_id, drone_pos in update_cmd.items():
+                for drone_id, drone_pos in update_cmd["coords"].items():
                     byIdDict[drone_id].goTo(drone_pos, 0, 5.0)
         
         new_state = {}
         for droneId in byIdDict.keys():
             new_state[droneId]= byIdDict[droneId].position()
         state_queue.put({'coords': new_state})
-        timeHelper.sleepForRate(30)
+        timeHelper.sleepForRate(sleepRate)
 
 
 def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matrices):
