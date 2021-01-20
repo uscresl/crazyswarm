@@ -132,7 +132,7 @@ def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matri
         nx.set_node_attributes(network.network, nodes, 'node')
 
         # randomly apply failure 80% of the time
-        if np.random.rand() > 0.8:
+        if np.random.rand() > 0.5:
             failed_node = failure_nodes[count_failures]
             fail_mat = rand_matrices[count_failures]
             nodes[failed_node].R += fail_mat
@@ -242,13 +242,13 @@ def p3(opt_que, update_queue, weights_queue, network):
             coords, _ = generate_coords(network.adjacency_matrix(),
                                      positions, fov, Rs,
                                         bbox=np.array(
-                                            [(-5, 5), (-5, 5), (0, 5)]),
+                                            [(-5, 5), (-5, 5), (1.5, 5)]),
                                         delta=3, safe_dist=1, connect_dist=2)
             new_config = network.adjacency_matrix()
             new_weights = current_weights
         else:
             # do optimization
-            new_config, new_weights = agent_opt(network.network.adjacency_matrix(),
+            new_config, new_weights = agent_opt(network.adjacency_matrix(),
                                                 current_weights,
                                                 covariance_data,
                                                 failed_node)
@@ -256,7 +256,7 @@ def p3(opt_que, update_queue, weights_queue, network):
             coords, _ = generate_coords(new_config,
                                      positions, fov, Rs,
                                         bbox=np.array(
-                                            [(-5, 5), (-5, 5), (0, 5)]),
+                                            [(-5, 5), (-5, 5), (1.5, 5)]),
                                         delta=3, safe_dist=1, connect_dist=2)
             nx.set_node_attributes(network.network, new_weights, 'weights')
 
