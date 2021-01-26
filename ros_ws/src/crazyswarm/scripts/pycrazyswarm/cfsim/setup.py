@@ -3,10 +3,18 @@
 from distutils.core import setup, Extension
 import os
 
+import numpy as np
+
+
 fw_dir = "../../../../../../crazyflie-firmware"
-fw_include = os.path.join(fw_dir, "src/modules/interface")
+include = [
+    os.path.join(fw_dir, "src/modules/interface"),
+    os.path.join(fw_dir, "src/hal/interface"),
+    np.get_include(),
+]
 
 modules = [
+    "collision_avoidance.c",
     "planner.c",
     "pptraj.c",
     "pptraj_compressed.c",
@@ -15,7 +23,7 @@ fw_sources = [os.path.join(fw_dir, "src/modules/src", mod) for mod in modules]
 
 cffirmware = Extension(
     "_cffirmware",
-    include_dirs=[fw_include],
+    include_dirs=include,
     sources=fw_sources + ["cffirmware_wrap.c"],
     extra_compile_args=["-O3"],
 )
