@@ -18,6 +18,7 @@ np.random.seed(42)
 
 Z = 1.0
 sleepRate = 30
+RADII = np.array([0.125, 0.125, 0.375])
 
 def goCircle(timeHelper, cf, startTime, totalTime=4, radius=1, kPosition=1):
     startPos = cf.initialPosition + np.array([0, 0, Z])
@@ -52,8 +53,25 @@ def p1(swarm, update_queue, state_queue):
     timeHelper = swarm.timeHelper
     allcfs = swarm.allcfs
 
-    allcfs.takeoff(targetHeight=1.0, duration=1.0+Z)
-    timeHelper.sleep(1.5)
+    idx = 0
+    #enable collision avoidance
+    for cf in allcfs.crazyflies:
+        restCrazyflies = allcfs.crazyflies[:idx] + allcfs.crazyflies[(idx + 1):]
+        cf.enableCollisionAvoidance(restCrazyflies, RADII)
+        idx+=1
+    #show ellipsoid    
+    timeHelper.visualizer.showEllipsoids(0.95 * RADII)
+
+    #allcfs.takeoff(targetHeight=1.0, duration=1.0+Z)
+    #timeHelper.sleep(1+Z)
+
+    for trackers in allcfs.crazyflies[:6]:
+        trackers.takeoff(targetHeight=2.0, duration=1.0+Z)
+    
+    for nonTrackers in allcfs.crazyflies[6:]:
+        nonTrackers.takeoff(targetHeight=1.0, duration=1.0+Z)
+
+    timeHelper.sleep(1+Z)
 
     byIdDict = allcfs.crazyfliesById
 
@@ -68,6 +86,9 @@ def p1(swarm, update_queue, state_queue):
         if not update_queue.empty():
             update_cmd = update_queue.get()
             if update_cmd == "END":
+                for cf in allcfs.crazyflies:
+                    cf.goTo(cf.initialPosition + np.array([0, 0, Z]), 0, 5.0)
+                timeHelper.sleep(10.0)
                 allcfs.land(targetHeight=0.06, duration=2.0)
                 timeHelper.sleep(2.0)
                 break
