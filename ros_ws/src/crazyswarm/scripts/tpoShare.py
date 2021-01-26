@@ -265,6 +265,7 @@ def p3(opt_que, update_queue, weights_queue, network):
 
         if skip_config_generation:
             # do formation synthesis step only
+            print("running formation synthesis only")
             coords, _ = generate_coords(network.adjacency_matrix(),
                                      positions, fov, Rs,
                                         bbox=np.array(

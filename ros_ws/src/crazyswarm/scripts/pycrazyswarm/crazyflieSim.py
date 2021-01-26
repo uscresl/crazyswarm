@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 
 import math
+import time
 
-import yaml
 import numpy as np
+import yaml
 
 from .cfsim import cffirmware as firm
 
@@ -62,6 +63,10 @@ class TimeHelper:
             if self.output:
                 self.output.update(self.t, self.crazyflies)
             self.step(self.dt)
+
+        # On Ubuntu 20 with VisPy, visualizer.update() doesn't always allow
+        # Ctrl+C to be processed. This fixes it.
+        time.sleep(0.0)
 
     # Mock for abstraction of rospy.Rate.sleep().
     def sleepForRate(self, rate):

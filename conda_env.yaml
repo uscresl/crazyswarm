@@ -12,3 +12,8 @@ dependencies:
   - pytest
   - snakeviz
   - scipy
+  - cvxopt
+  - mosek::mosek
+  - networkx
+  - picos::picos
+  - conda-forge::quadpy
