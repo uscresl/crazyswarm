@@ -256,14 +256,15 @@ def p3(opt_que, update_queue, weights_queue, network):
         Rs = []
 
         # read target positions (to fix bounding box for formation synthesis step)
-        t1 = opt_info['6']['pos']
-        t2 = opt_info['7']['pos']
+        t1 = opt_info['5']['pos']
+        t2 = opt_info['6']['pos']
         mean_x = (t1[0] + t2[0]) / 2
         mean_y = (t1[1] + t2[1]) / 2
         min_x = mean_x - 3
         max_x = mean_x + 3
         min_y = mean_y - 3
         max_y = mean_y + 3
+        print((min_x, max_x), (min_y, max_y))
 
         for id, n in nodes.items():
             c = opt_info[str(id)]['cov']
@@ -289,8 +290,9 @@ def p3(opt_que, update_queue, weights_queue, network):
                                      positions, fov, Rs,
                                         # bbox=np.array(
                                         #     [(-5, 5), (-5, 5), (1.5, 5)]),
-                                        bbox=np.array(
-                                            [(-2.5, 2.5), (-4, 2), (1.5, 5)]),
+                                        # bbox=np.array(
+                                        #     [(-2.5, 2.5), (-4, 2), (1.5, 5)]),
+                                        bbox=np.array([(min_x, max_x), (min_y, max_y), (-1.5, 5)]),
                                         delta=3, safe_dist=1, connect_dist=2)
             new_config = network.adjacency_matrix()
             new_weights = current_weights
@@ -307,8 +309,9 @@ def p3(opt_que, update_queue, weights_queue, network):
                                      positions, fov, Rs,
                                         # bbox=np.array(
                                         #     [(-5, 5), (-5, 5), (1.5, 5)]),
-                                        bbox=np.array(
-                                            [(-2.5, 2.5), (-4, 2), (1.5, 5)]),
+                                        # bbox=np.array(
+                                        #     [(-2.5, 2.5), (-4, 2), (1.5, 5)]),
+                                        bbox=np.array([(min_x, max_x), (min_y, max_y), (-1.5, 5)]),
                                         delta=3, safe_dist=1, connect_dist=2)
             nx.set_node_attributes(network.network, new_weights, 'weights')
 
