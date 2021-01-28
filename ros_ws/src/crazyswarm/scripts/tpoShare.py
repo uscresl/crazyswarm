@@ -67,6 +67,7 @@ def p1(swarm, update_queue, state_queue):
 
     for trackers in allcfs.crazyflies[:6]:
         trackers.takeoff(targetHeight=2.0, duration=1.0+Z)
+        trackers.goTo(trackers.initialPosition + np.array([-1, -2, 2]), 0, 2)
     
     for nonTrackers in allcfs.crazyflies[6:]:
         nonTrackers.takeoff(targetHeight=1.0, duration=1.0+Z)
@@ -154,6 +155,9 @@ def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matri
         nx.set_node_attributes(network.network, current_weights, 'weights')
         nx.set_node_attributes(network.network, nodes, 'node')
 
+        network.targets[0].state = np.array([[positions[5][0]], [positions[5][0]], [1], [1]])
+        network.targets[1].state = np.array([[positions[6][0]], [positions[6][0]], [1], [1]])
+
         # randomly apply failure 80% of the time
         if np.random.rand() > 0.5:
             failed_node = failure_nodes[count_failures]
@@ -197,7 +201,7 @@ def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matri
 
     while not opt_queue.empty():
         pass
-    print("sending END command")
+    print("p2 sending END command")
     opt_queue.put('END')
 
 
@@ -232,6 +236,7 @@ def p3(opt_que, update_queue, weights_queue, network):
 
     while True:
         # Get latest optimization information
+        print("p3 waiting for opt info")
         opt_info = opt_que.get()
         print("p3 got opt info")
 
@@ -268,8 +273,10 @@ def p3(opt_que, update_queue, weights_queue, network):
             print("running formation synthesis only")
             coords, _ = generate_coords(network.adjacency_matrix(),
                                      positions, fov, Rs,
+                                        # bbox=np.array(
+                                        #     [(-5, 5), (-5, 5), (1.5, 5)]),
                                         bbox=np.array(
-                                            [(-5, 5), (-5, 5), (1.5, 5)]),
+                                            [(-2.5, 2.5), (-4, 2), (1.5, 5)]),
                                         delta=3, safe_dist=1, connect_dist=2)
             new_config = network.adjacency_matrix()
             new_weights = current_weights
@@ -284,8 +291,10 @@ def p3(opt_que, update_queue, weights_queue, network):
             # do formation synthesis
             coords, _ = generate_coords(new_config,
                                      positions, fov, Rs,
+                                        # bbox=np.array(
+                                        #     [(-5, 5), (-5, 5), (1.5, 5)]),
                                         bbox=np.array(
-                                            [(-5, 5), (-5, 5), (1.5, 5)]),
+                                            [(-2.5, 2.5), (-4, 2), (1.5, 5)]),
                                         delta=3, safe_dist=1, connect_dist=2)
             nx.set_node_attributes(network.network, new_weights, 'weights')
 
@@ -308,6 +317,9 @@ def p3(opt_que, update_queue, weights_queue, network):
         #                  'new_weights': current_weights}
         weights_queue.put(weight_update)
 
+    while not update_queue.empty():
+        pass
+    print("p3 sending END command")
     update_queue.put('END')
 
 
@@ -380,7 +392,8 @@ def main():
     Create fixed failure sequence
     """
     # set random sequence of drones to experience failure
-    num_failures = 7
+    # num_failures = 7
+    num_failures = 3
     failure_nodes = np.random.randint(5, size=num_failures)
 
     # generate random matrices to add to R matrix of failed drone
