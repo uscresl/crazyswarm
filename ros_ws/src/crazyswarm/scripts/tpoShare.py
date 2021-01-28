@@ -155,8 +155,8 @@ def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matri
         nx.set_node_attributes(network.network, current_weights, 'weights')
         nx.set_node_attributes(network.network, nodes, 'node')
 
-        network.targets[0].state = np.array([[positions[5][0]], [positions[5][0]], [1], [1]])
-        network.targets[1].state = np.array([[positions[6][0]], [positions[6][0]], [1], [1]])
+        network.targets[0].state = np.array([[positions[6][0]], [positions[6][0]], [1], [1]])
+        network.targets[1].state = np.array([[positions[7][0]], [positions[7][0]], [1], [1]])
 
         # randomly apply failure 80% of the time
         if np.random.rand() > 0.5:
@@ -193,6 +193,10 @@ def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matri
                                  'r': n.R}
         opt_info['skip_flag'] = skip_config_generation
         opt_info['failed_drone'] = failed_node
+
+        # send target positions (to fix bounding box for formation synthesis step)
+        opt_info[str(5)] = {'pos': positions[6]}
+        opt_info[str(6)] = {'pos': positions[7]}
 
         opt_queue.put(opt_info)
 
@@ -250,6 +254,16 @@ def p3(opt_que, update_queue, weights_queue, network):
         covariance_data = []
         positions = {}
         Rs = []
+
+        # read target positions (to fix bounding box for formation synthesis step)
+        t1 = opt_info['6']['pos']
+        t2 = opt_info['7']['pos']
+        mean_x = (t1[0] + t2[0]) / 2
+        mean_y = (t1[1] + t2[1]) / 2
+        min_x = mean_x - 3
+        max_x = mean_x + 3
+        min_y = mean_y - 3
+        max_y = mean_y + 3
 
         for id, n in nodes.items():
             c = opt_info[str(id)]['cov']
