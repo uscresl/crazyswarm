@@ -248,9 +248,7 @@ class Crazyflie:
 
     def goTo(self, goal, yaw, duration, relative = False, groupMask = 0):
         if self._isGroup(groupMask):
-            if self.mode != Crazyflie.MODE_HIGH_POLY:
-                # We need to update to the latest firmware that has go_to_from.
-                raise ValueError("goTo from low-level modes not yet supported.")
+            # TODO: if we have ever used a low-level mode, verify that notifySetpointsStop() was called
             self.mode = Crazyflie.MODE_HIGH_POLY
             firm.plan_go_to(self.planner, relative, firm.mkvec(*goal), yaw, duration, self.time())
 
