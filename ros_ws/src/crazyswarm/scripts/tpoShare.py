@@ -101,7 +101,11 @@ def p1(swarm, update_queue, state_queue):
         new_state = {}
         for droneId in byIdDict.keys():
             new_state[droneId]= byIdDict[droneId].position()
-        state_queue.put({'coords': new_state})
+        try:
+            state_queue.put({'coords': new_state}, block=False)
+        except:
+            pass
+
         timeHelper.sleepForRate(sleepRate)
 
 
@@ -203,8 +207,8 @@ def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matri
         if count_failures >= len(failure_nodes):
             break
 
-    while not opt_queue.empty():
-        pass
+    # while not opt_queue.empty():
+    #     pass
     print("p2 sending END command")
     opt_queue.put('END')
 
@@ -334,8 +338,8 @@ def p3(opt_que, update_queue, weights_queue, network):
         #                  'new_weights': current_weights}
         weights_queue.put(weight_update)
 
-    while not update_queue.empty():
-        pass
+    # while not update_queue.empty():
+    #     pass
     print("p3 sending END command")
     update_queue.put('END')
 
@@ -422,10 +426,10 @@ def main():
         rpd = np.dot(r, r.T)
         rand_matrices.append(rpd)
 
-    state_queue = Queue()  # p1 to p2
-    update_queue = Queue(1)  # p3 to p1
-    weights_queue = Queue(1)  # p3 to p2
-    opt_queue = Queue(1)  # p2 to p3
+    state_queue = Queue(1)  # p1 to p2
+    update_queue = Queue()  # p3 to p1
+    weights_queue = Queue()  # p3 to p2
+    opt_queue = Queue()  # p2 to p3
 
     process2=Process(target=p2,args=(state_queue, weights_queue, opt_queue,
                                      network, failure_nodes, rand_matrices))
