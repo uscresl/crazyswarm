@@ -59,8 +59,9 @@ def one_test(seed, with_sleep=False):
         dur = t1 - t0
         min_total = (producer_cycle) * items
         assert dur >= min_total
-        # 0.2 fudge factor for spawn and join
-        assert dur <= min_total + consumer_cycle + 0.2
+        # generous fudge factor for spawn/join overhead and sleep() potentially
+        # taking longer than requested.
+        assert dur <= min_total + consumer_cycle + 1.0
 
 
 def test_OneItemQueue():
