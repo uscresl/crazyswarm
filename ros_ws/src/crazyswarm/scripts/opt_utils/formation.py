@@ -260,17 +260,18 @@ def Ho(drone1_pos, drone2_pos, fov1_radius, fov2_radius, focal_length=0.04, sigm
 
     # scheme = quadpy.disk.lether(6)
     scheme = SCHEME
-    val1 = scheme.integrate(lambda x: (fpers(x[0], a1, b1, c1) *
-                                       fres(x[0], a2, b2, c2)),
-                           [mid_x, mid_y], overlap
-                           )
+    val1 = scheme.integrate(
+        lambda x, a=[a1, a2], b=[b1, b2], c=[c1,c2]: int_fpers_fres(x[0], a, b, c),
+        [mid_x, mid_y], overlap)
 
-    val2 = scheme.integrate(lambda x: (fpers(x[0], a3, b3, c3) *
-                                       fres(x[0], a4, b4, c4)),
-                            [mid_x, mid_y], overlap
-                            )
+    val2 = scheme.integrate(
+        lambda x, a=[a3, a4], b=[b3, b4], c=[c3, c4]: int_fpers_fres(x[0], a, b, c),
+        [mid_x, mid_y], overlap)
+
     return min(val1, val2)
 
+def int_fpers_fres(p, a, b, c):
+    return fpers(p, a[0], b[0], c[0]) * fres(p, a[1], b[1], c[1])
 
 def fpers(p, a, b, c):
     if p.all() == 0:

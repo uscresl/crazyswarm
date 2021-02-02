@@ -14,6 +14,8 @@ from kf_utils.target import Target, DEFAULT_H
 from opt_utils.optimization import agent_opt
 from opt_utils.formation import generate_coords
 
+from one_item_queue import OneItemQueue
+
 np.random.seed(42)
 
 Z = 1.0
@@ -101,15 +103,18 @@ def p1(swarm, update_queue, state_queue):
         new_state = {}
         for droneId in byIdDict.keys():
             new_state[droneId]= byIdDict[droneId].position()
-        try:
-            state_queue.put({'coords': new_state}, block=False)
-        except:
-            pass
+        # try:
+        #     state_queue.put({'coords': new_state}, block=False)
+        # except:
+        #     pass
+        state_queue.put({'coords': new_state})
 
         timeHelper.sleepForRate(sleepRate)
 
+    state_queue.put('END')
 
-def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matrices):
+
+def p2(state_queue, weights_queue, opt_queue, network):
     """
 
     :param state_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}}
@@ -138,18 +143,26 @@ def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matri
     """
     print('Current pid: {}'.format(os.getpid()))
 
-    count_failures = 0
+    # count_failures = 0
     while True:
         # Get latest positions from position_queue
-        state = state_queue.get()
+        # state = state_queue.get()
+        try:
+            state = state_queue.get_nowait()
+        except:
+            continue
+
+        if state == 'END':
+            break
+
         positions = state['coords']
-        print("p2 while loop")
+        # print("p2 while loop")
         try:
             weights = weights_queue.get(block=False)
             current_config = weights['new_config']
             current_weights = weights['new_weights']
         except:
-            print("using existing config and weights")
+            # print("using existing config and weights")
             current_config = network.adjacency_matrix()
             current_weights = nx.get_node_attributes(network.network, 'weights')
 
@@ -161,15 +174,6 @@ def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matri
 
         network.targets[0].state = np.array([[positions[6][0]], [positions[6][0]], [1], [1]])
         network.targets[1].state = np.array([[positions[7][0]], [positions[7][0]], [1], [1]])
-
-        # randomly apply failure 80% of the time
-        if np.random.rand() > 0.5:
-            failed_node = failure_nodes[count_failures]
-            fail_mat = rand_matrices[count_failures]
-            nodes[failed_node].R += fail_mat
-            count_failures += 1
-        else:
-            failed_node = None
 
         # set current tracker positions from data in queue
         for id, n in nodes.items():
@@ -196,7 +200,7 @@ def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matri
                                  'pos': n.position,
                                  'r': n.R}
         opt_info['skip_flag'] = skip_config_generation
-        opt_info['failed_drone'] = failed_node
+        # opt_info['failed_drone'] = failed_node
 
         # send target positions (to fix bounding box for formation synthesis step)
         opt_info[str(5)] = {'pos': positions[6]}
@@ -204,17 +208,17 @@ def p2(state_queue, weights_queue, opt_queue, network, failure_nodes, rand_matri
 
         opt_queue.put(opt_info)
 
-        if count_failures >= len(failure_nodes):
-            break
+        # if count_failures >= len(failure_nodes):
+        #     break
 
     # while not opt_queue.empty():
     #     pass
-    print("p2 sending END command")
-    opt_queue.put('END')
+    # print("p2 sending END command")
+    # opt_queue.put('END')
 
 
 
-def p3(opt_que, update_queue, weights_queue, network):
+def p3(opt_que, update_queue, weights_queue, network, failure_nodes, rand_matrices):
     """
 
     :param opt_queue: dictionary of form {drone_id : {'cov': drone_cov, 'pos': drone_pos, 'r': drone_r}, ...
@@ -242,14 +246,18 @@ def p3(opt_que, update_queue, weights_queue, network):
     for n in range(num_nodes):
         fov[n] = 5
 
+    count_failures = 0
     while True:
         # Get latest optimization information
-        print("p3 waiting for opt info")
-        opt_info = opt_que.get()
+        # print("p3 waiting for opt info")
+        try:
+            opt_info = opt_que.get_nowait()
+        except:
+            continue
         print("p3 got opt info")
 
-        if opt_info == 'END':
-            break
+        # if opt_info == 'END':
+        #     break
 
         nodes = nx.get_node_attributes(network.network, 'node')
         current_weights = nx.get_node_attributes(network.network, 'weights')
@@ -283,7 +291,17 @@ def p3(opt_que, update_queue, weights_queue, network):
             Rs.append(opt_info[str(id)]['r'])
 
         skip_config_generation = opt_info['skip_flag']
-        failed_node = opt_info['failed_drone']
+
+        # randomly apply failure some % of the time
+        if np.random.rand() > 0.5:
+            failed_node = failure_nodes[count_failures]
+            fail_mat = rand_matrices[count_failures]
+            nodes[failed_node].R += fail_mat
+            count_failures += 1
+        else:
+            failed_node = None
+
+        # failed_node = opt_info['failed_drone']
         if failed_node is None:
             skip_config_generation = True
 
@@ -338,8 +356,9 @@ def p3(opt_que, update_queue, weights_queue, network):
         #                  'new_weights': current_weights}
         weights_queue.put(weight_update)
 
-    # while not update_queue.empty():
-    #     pass
+        if count_failures >= len(failure_nodes):
+            break
+
     print("p3 sending END command")
     update_queue.put('END')
 
@@ -426,14 +445,20 @@ def main():
         rpd = np.dot(r, r.T)
         rand_matrices.append(rpd)
 
-    state_queue = Queue(1)  # p1 to p2
+    # state_queue = Queue(1)  # p1 to p2
+    # update_queue = Queue()  # p3 to p1
+    # weights_queue = Queue()  # p3 to p2
+    # opt_queue = Queue()  # p2 to p3
+
+    state_queue = OneItemQueue()  # p1 to p2
     update_queue = Queue()  # p3 to p1
     weights_queue = Queue()  # p3 to p2
-    opt_queue = Queue()  # p2 to p3
+    opt_queue = OneItemQueue()  # p2 to p3
 
     process2=Process(target=p2,args=(state_queue, weights_queue, opt_queue,
+                                     network))
+    process3=Process(target=p3,args=(opt_queue, update_queue, weights_queue,
                                      network, failure_nodes, rand_matrices))
-    process3=Process(target=p3,args=(opt_queue, update_queue, weights_queue, network))
     process2.start()
     process3.start()
 
