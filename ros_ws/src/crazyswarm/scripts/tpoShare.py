@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from copy import deepcopy
-import  networkx as nx
+import networkx as nx
 import numpy as np
 from multiprocessing import Process, Queue
 import os
@@ -21,13 +21,15 @@ np.random.seed(42)
 Z = 1.0
 sleepRate = 30
 RADII = np.array([0.125, 0.125, 0.375])
-NUM_TRACKERS = 6
-NUM_TARGETS = 1
+NUM_TRACKERS = 5
+NUM_TARGETS = 2
 NUM_FAILURES = 3
+FOV = 5
+CONSENSUS_STEPS = 3
 
 BOUNDING_BOX_WIDTH = 3  # in x/y directions
 TARGET_HEIGHT = 0.5
-TRACKER_MIN_HEIGHT = TARGET_HEIGHT + RADII[2]
+TRACKER_MIN_HEIGHT = TARGET_HEIGHT + 2*RADII[2]
 TRACKER_MAX_HEIGHT = 2.25
 
 def goCircle(timeHelper, cf, startTime, totalTime=4, radius=1, kPosition=1):
@@ -134,7 +136,9 @@ def p2(state_queue, weights_queue, opt_queue, network, target_ids):
         where drone_id is int
 
     :param weights_queue: dictionary of form {'new_config': adjacency_matrix,
-                                             'new_weights: {drone_id: {neighbor_id: weight, ...} ...}
+                                             'new_weights: {drone_id: {neighbor_id: weight, ...} ...},
+                                             'failed_node': int,
+                                             'fail_mat': ndarray
                                              }
         adjacency_matrix is ndarray of shape (n, n)
         neighbor_id is int
@@ -159,6 +163,7 @@ def p2(state_queue, weights_queue, opt_queue, network, target_ids):
 
 
     # count_failures = 0
+    mean_covs = []
     while True:
         # Get latest positions from position_queue
         # state = state_queue.get()
@@ -174,10 +179,14 @@ def p2(state_queue, weights_queue, opt_queue, network, target_ids):
         # print("p2 while loop")
         try:
             weights = weights_queue.get(block=False)
+            failed_node = weights['failed_node']
+            fail_mat = weights['fail_mat']
             current_config = weights['new_config']
             current_weights = weights['new_weights']
         except:
             # print("using existing config and weights")
+            failed_node = None
+            fail_mat = None
             current_config = network.adjacency_matrix()
             current_weights = nx.get_node_attributes(network.network, 'weights')
 
@@ -198,27 +207,34 @@ def p2(state_queue, weights_queue, opt_queue, network, target_ids):
             n.update_position(positions[id])
 
         # simulate local KF
+        # print('p2 simulating KF')
+        if failed_node is not None:
+            nodes[failed_node].R += fail_mat
+
         skip_config_generation = False
         for id, n in nodes.items():
             n.predict(len(nodes))
             ms = n.get_measurements(network.targets)
+            if failed_node is not None:
+                ms = [m + np.random.random(m.shape) * 5 for m in ms]
             n.update(ms)
 
             # set flag if one of the trackers cannot see target
             if n.missed_observation:
                 skip_config_generation = True
 
+        # print('p2 running consensus')
         # initialize consensus
         for id, n in nodes.items():
             n.init_consensus()
 
+        # print('p2 sending opt info')
         opt_info = {}
         for id, n in nodes.items():
             opt_info[str(id)] = {'cov': n.omega,
                                  'pos': n.position,
                                  'r': n.R}
         opt_info['skip_flag'] = skip_config_generation
-        # opt_info['failed_drone'] = failed_node
 
         # send target positions (to fix bounding box for formation synthesis step)
         for t_id in target_ids:
@@ -227,6 +243,49 @@ def p2(state_queue, weights_queue, opt_queue, network, target_ids):
 
         opt_queue.put(opt_info)
 
+        # finish consensus
+        # print('p2 finish consensus')
+        for l in range(CONSENSUS_STEPS):
+            neighbor_weights = {}
+            neighbor_omegas = {}
+            neighbor_qs = {}
+
+            for id, n in nodes.items():
+                weights = []
+                omegas = []
+                qs = []
+                n_weights = nx.get_node_attributes(network.network,
+                                                   'weights')[id]
+                for neighbor in network.network.neighbors(id):
+                    n_node = nx.get_node_attributes(network.network,
+                                                    'node')[neighbor]
+                    weights.append(n_weights[neighbor])
+                    omegas.append(n_node.omega)
+                    qs.append(n_node.qs)
+                neighbor_weights[id] = weights
+                neighbor_omegas[id] = omegas
+                neighbor_qs[id] = qs
+
+            for id, n in nodes.items():
+                n.consensus_filter(neighbor_omegas[id],
+                                   neighbor_qs[id],
+                                   neighbor_weights[id])
+
+        for id, n in nodes.items():
+            n.intermediate_cov_update()
+
+        # after consensus updates
+        for id, n in nodes.items():
+            n.after_consensus_update(len(nodes))
+
+        # Save average covariance
+        covs = []
+        for id, n in nodes.items():
+            covs.append(np.trace(n.full_cov))
+        mean_covs.append(np.mean(covs))
+
+    np.savetxt('save_covs.txt', mean_covs)
+
 
 
 def p3(opt_que, update_queue, weights_queue, network,
@@ -234,21 +293,25 @@ def p3(opt_que, update_queue, weights_queue, network,
     """
 
     :param opt_queue: dictionary of form {drone_id : {'cov': drone_cov, 'pos': drone_pos, 'r': drone_r}, ...
-                                        'skip_flag': skip_flag,
-                                        'failed_drone': drone_id}
+                                        'skip_flag': skip_flag}
         where drone_id is int
         drone_cov is ndarray of shape (4,4)
         drone_pos is ndarray of shape (3,1)
         drone_r is ndarray of shape (4, 4)
         skip_flag is a boolean
-    :param update_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}
-                                             'new_config': adjacency_matrix,
-                                             'new_weights: {drone_id: {neighbor_id: weight, ...} ...}
-                                             }
-        where drone_id is int
+
+    :param weights_queue: dictionary of form {'new_config': adjacency_matrix,
+                                         'new_weights: {drone_id: {neighbor_id: weight, ...} ...},
+                                            'failed_node': int,
+                                             'fail_mat': ndarray
+                                         }
         adjacency_matrix is ndarray of shape (n, n)
         neighbor_id is int
         weight is float
+    :param update_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}}
+        where drone_id is int
+        drone_pos is ndarray of shape (3,1)
+
     :param network: network object
     :param target_ids: ids of the targets (non-trackers)
     :return:
@@ -257,7 +320,7 @@ def p3(opt_que, update_queue, weights_queue, network,
     num_nodes = len(nx.get_node_attributes(network.network, 'node'))
     fov = {}
     for n in range(num_nodes):
-        fov[n] = 5
+        fov[n] = FOV
 
     count_failures = 0
     while True:
@@ -314,6 +377,7 @@ def p3(opt_que, update_queue, weights_queue, network,
             nodes[failed_node].R += fail_mat
             count_failures += 1
         else:
+            fail_mat = None
             failed_node = None
 
         # failed_node = opt_info['failed_drone']
@@ -323,7 +387,7 @@ def p3(opt_que, update_queue, weights_queue, network,
         if skip_config_generation:
             # do formation synthesis step only
             print("running formation synthesis only")
-            coords, _ = generate_coords(network.adjacency_matrix(),
+            coords, surv_q = generate_coords(network.adjacency_matrix(),
                                      positions, fov, Rs,
                                         # bbox=np.array(
                                         #     [(-5, 5), (-5, 5), (1.5, 5)]),
@@ -343,7 +407,7 @@ def p3(opt_que, update_queue, weights_queue, network,
                                                 covariance_data,
                                                 failed_node)
             # do formation synthesis
-            coords, _ = generate_coords(new_config,
+            coords, surv_q = generate_coords(new_config,
                                      positions, fov, Rs,
                                         # bbox=np.array(
                                         #     [(-5, 5), (-5, 5), (1.5, 5)]),
@@ -368,7 +432,9 @@ def p3(opt_que, update_queue, weights_queue, network,
         update_queue.put(update)
 
         weight_update = {'new_config': new_config,
-                         'new_weights': new_weights}
+                         'new_weights': new_weights,
+                         'failed_node': failed_node,
+                         'fail_mat': fail_mat}
         # weight_update = {'new_config': network.adjacency_matrix(),
         #                  'new_weights': current_weights}
         weights_queue.put(weight_update)
@@ -413,7 +479,7 @@ def main():
     """
     Create the trackers
     """
-    fov = 5
+    fov = FOV
 
     tracker_id_map = {}
     node_attrs = {}
