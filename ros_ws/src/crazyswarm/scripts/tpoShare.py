@@ -32,15 +32,14 @@ TARGET_HEIGHT = 0.5
 TRACKER_MIN_HEIGHT = TARGET_HEIGHT + 2*RADII[2]
 TRACKER_MAX_HEIGHT = 2.25
 
-def goCircle(timeHelper, cf, startTime, totalTime=4, radius=1, kPosition=1):
-    startPos = cf.initialPosition + np.array([0, 0, Z])
-    center_circle = startPos - np.array([radius, 0, 0])
-
+# Trackers should concentric circles around (0, 0, Z)
+# For roatation, -1 stands for clockwise, 1 for counter-clockwise
+def goCircle(timeHelper, cf, startTime, centerCircle=np.array([0, 0, Z]), totalTime=60, radius=1, kPosition=1, rotation=-1):
     time = timeHelper.time() - startTime
-    omega = 2 * np.pi / totalTime
+    omega = 2 * rotation * np.pi / totalTime
     vx = -radius * omega * np.sin(omega * time)  
     vy = radius * omega * np.cos(omega * time)
-    desiredPos = center_circle + radius * np.array(
+    desiredPos = centerCircle + radius * np.array(
         [np.cos(omega * time), np.sin(omega * time), 0])
     errorX = desiredPos - cf.position() 
     cf.cmdVelocityWorld(np.array([vx, vy, 0] + kPosition * errorX), yawRate=0)
@@ -56,8 +55,8 @@ def p1(swarm, update_queue, state_queue, target_ids, tracker_id_map):
     :param state_queue: dictionary of form {'coords': {drone_id: drone_pos, ...}}
         where drone_id is int
 
-    :param target_ids: ids of the targets (non-trackers)
-    :param tracker_id_map: map of crazyflie ids to network ids
+    :param target_ids: list ids of the targets (non-trackers)
+    :param tracker_id_map: dict of crazyflie ids to network ids
     :return:
     """
     print('Current pid: {}'.format(os.getpid()))
@@ -77,7 +76,6 @@ def p1(swarm, update_queue, state_queue, target_ids, tracker_id_map):
     #show ellipsoid    
     timeHelper.visualizer.showEllipsoids(0.95 * RADII)
 
-
     # for trackers in allcfs.crazyflies[:6]:
     for tracker_id in list(tracker_id_map.keys()):
         tracker = byIdDict[tracker_id]
@@ -89,14 +87,14 @@ def p1(swarm, update_queue, state_queue, target_ids, tracker_id_map):
         nonTracker = byIdDict[non_tracker_id]
         nonTracker.takeoff(targetHeight=TARGET_HEIGHT, duration=1.0+Z)
 
-    timeHelper.sleep(1+Z)
+    timeHelper.sleep(2+Z)
 
     startTime = timeHelper.time()
 
     while True:
-        #non-tracker go circle
-        for target in target_ids:
-            goCircle(timeHelper, byIdDict[target], startTime)
+        # two non-tracker go circle move in concentric circles with long period
+        for num, target in enumerate(target_ids):
+            goCircle(timeHelper, byIdDict[target_ids[num]], startTime, radius=1+num,rotation=pow(-1, num))
 
         # Get latest optimization information
         if not update_queue.empty():
@@ -553,4 +551,5 @@ def main():
 
     p1(swarm, update_queue, state_queue, target_ids, tracker_id_map)
 
-main()
+if __name__ == '__main__':
+    main()
