@@ -26,6 +26,7 @@ NUM_TARGETS = 2
 NUM_FAILURES = 3
 FOV = 5
 CONSENSUS_STEPS = 3
+FLAG_SHOWELLIPSOIDS = False
 
 BOUNDING_BOX_WIDTH = 3  # in x/y directions
 TARGET_HEIGHT = 0.5
@@ -73,8 +74,8 @@ def p1(swarm, update_queue, state_queue, target_ids, tracker_id_map):
         restCrazyflies = allcfs.crazyflies[:idx] + allcfs.crazyflies[(idx + 1):]
         cf.enableCollisionAvoidance(restCrazyflies, RADII)
         idx+=1
-    #show ellipsoid    
-    timeHelper.visualizer.showEllipsoids(0.95 * RADII)
+    if FLAG_SHOWELLIPSOIDS:
+        timeHelper.visualizer.showEllipsoids(0.95 * RADII)
 
     # for trackers in allcfs.crazyflies[:6]:
     for tracker_id in list(tracker_id_map.keys()):
