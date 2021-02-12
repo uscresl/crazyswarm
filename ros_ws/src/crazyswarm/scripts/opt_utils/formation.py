@@ -8,7 +8,7 @@ SCHEME = quadpy.s2.get_good_scheme(6)
 def generate_coords(new_config, current_coords, fov, Rs,
                     bbox=np.array([(-50, 50), (-50, 50), (10, 100)]),
                     delta=10, safe_dist=10, connect_dist=25, k=-0.1, steps=1000,
-                    lax=True):
+                    lax=True, target_estimate=None):
     """
     Uses Simulated Annealing to generate new coordinates given new config
     :param new_config: new adjacency matrix
@@ -23,7 +23,7 @@ def generate_coords(new_config, current_coords, fov, Rs,
     :return:
     """
 
-    invalid_iters_limit = 3
+    invalid_iters_limit = 1
 
     # Simulated Annealing
     H = np.logspace(1, 3, steps)
@@ -37,10 +37,14 @@ def generate_coords(new_config, current_coords, fov, Rs,
             T = temperature[i]
             propose_coords = propose(new_coords, delta)
             current_E, currSQ = energyCoverage(new_config, new_coords, fov, Rs,
-                                       H[i], k, safe_dist, connect_dist, bbox)
+                                               H[i], k, safe_dist, connect_dist,
+                                               bbox, current_coords,
+                                               target_estimate=target_estimate)
             propose_E, propSQ = energyCoverage(new_config, propose_coords, fov,
                                                Rs, H[i], k, safe_dist,
-                                               connect_dist, bbox)
+                                               connect_dist, bbox,
+                                               current_coords,
+                                               target_estimate=target_estimate)
             if propose_E < current_E:
                 new_coords = deepcopy(propose_coords)
             else:
@@ -84,7 +88,9 @@ def propose(current_coords, delta):
 
 
 def energyCoverage(config, propose_coords, fov, Rs,
-                   H, k, safe_dist, connect_dist, bbox):
+                   H, k, safe_dist, connect_dist, bbox,
+                   existing_coords,
+                   target_estimate=None):
     """
     Get Energy, try to congregate around centroid of PHD
     :param config: New Configuration
@@ -95,6 +101,8 @@ def energyCoverage(config, propose_coords, fov, Rs,
     :param safe_dist: safe distances between nodes
     :param connect_dist: connect distances between nodes
     :param bbox: region bounding box
+    :param existing_coords: the current coordinates
+    :param target_estimate: centroid of the targets
     :return: Energy value
     """
     total_coverage = 0
@@ -117,10 +125,23 @@ def energyCoverage(config, propose_coords, fov, Rs,
     sum_conn = 0
     bbox = bbox
 
+    sum_x = 0
+    sum_y = 0
+
+    coords_diff = 0
+
     n = len(propose_coords)
     for i in range(n):
         pos = propose_coords[i]
         sum_box_node = 0
+
+        sum_x += pos[0]
+        sum_y += pos[1]
+
+        prev_pos = existing_coords[i]
+        coords_diff += np.linalg.norm(np.array([[pos[0]], [pos[1]], [pos[2]]]) -
+                                      np.array([[prev_pos[0]], [prev_pos[1]], [prev_pos[2]]])
+                                      )
 
         for d in range(len(bbox)):
             sum_box_node = sum_box_node + (ph(pos[d] - bbox[d, 1], H) +
@@ -136,8 +157,21 @@ def energyCoverage(config, propose_coords, fov, Rs,
             else:
                 sum_conn = sum_conn + (ph(connect_dist - d, H))
 
+    avg_x = sum_x / float(n)
+    avg_y = sum_y / float(n)
+    node_pos = np.array([[avg_x], [avg_y]])
+    if target_estimate is not None:
+        dist_from_target = np.linalg.norm(node_pos - target_estimate)
+        # sum_focus = ph(dist_from_target - fov[i], H)
+        sum_focus = ph(dist_from_target, H)
+    else:
+        sum_focus = 0
+
+    sum_diff = ph(coords_diff, H)
+
     energy = (k * total_coverage) + coverage_penalties + \
-             sum_box + sum_safe + sum_conn
+             sum_box + sum_safe + sum_conn + sum_focus + 0.5*sum_diff
+
     surveillance_quality = total_coverage - coverage_penalties
     return energy, surveillance_quality
 
