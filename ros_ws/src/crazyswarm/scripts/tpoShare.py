@@ -21,7 +21,6 @@ np.random.seed(42)
 Z = 1.0
 sleepRate = 30
 RADII = np.array([0.125, 0.125, 0.375])
-NUM_TRACKERS = 5
 NUM_TARGETS = 2
 NUM_FAILURES = 5
 FOV = 5
@@ -463,8 +462,8 @@ def main():
     y_pos_dict = dict(sorted(y_pos_dict.items(), key=lambda item: item[1]))
     ids_ordered_by_y_pos = list(y_pos_dict.keys())
 
-    num_trackers = NUM_TRACKERS
     num_targets = NUM_TARGETS
+    num_trackers = len(allcfs.crazyflies) - num_targets
 
     """
     Create the targets
