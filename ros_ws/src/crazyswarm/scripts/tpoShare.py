@@ -23,7 +23,7 @@ sleepRate = 30
 RADII = np.array([0.125, 0.125, 0.375])
 NUM_TRACKERS = 5
 NUM_TARGETS = 2
-NUM_FAILURES = 3
+NUM_FAILURES = 5
 FOV = 5
 CONSENSUS_STEPS = 3
 FLAG_SHOWELLIPSOIDS = False
@@ -163,6 +163,7 @@ def p2(state_queue, weights_queue, opt_queue, network, target_ids):
 
     # count_failures = 0
     mean_covs = []
+    mean_errors = []
     while True:
         # Get latest positions from position_queue
         # state = state_queue.get()
@@ -195,11 +196,14 @@ def p2(state_queue, weights_queue, opt_queue, network, target_ids):
         nx.set_node_attributes(network.network, current_weights, 'weights')
         nx.set_node_attributes(network.network, nodes, 'node')
 
+        true_targets = []
+
         for i in range(len(target_ids)):
             t_id = target_ids[i]
             target_pos = positions[t_id]
             network.targets[i].state = \
                 np.array([[target_pos[0]], [target_pos[1]], [1], [1]])
+            true_targets.append(network.targets[i])
 
         # set current tracker positions from data in queue
         for id, n in nodes.items():
@@ -277,6 +281,9 @@ def p2(state_queue, weights_queue, opt_queue, network, target_ids):
         for id, n in nodes.items():
             n.after_consensus_update(len(nodes))
 
+        errors = network.calc_errors(true_targets)
+        mean_errors.append(np.mean([v for k, v in errors.items()]))
+
         # Save average covariance
         covs = []
         for id, n in nodes.items():
@@ -284,6 +291,7 @@ def p2(state_queue, weights_queue, opt_queue, network, target_ids):
         mean_covs.append(np.mean(covs))
 
     np.savetxt('save_covs.txt', mean_covs)
+    np.savetxt('save_kf_errors.txt', mean_errors)
 
 
 
