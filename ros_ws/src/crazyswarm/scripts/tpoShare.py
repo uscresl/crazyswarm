@@ -18,7 +18,6 @@ from one_item_queue import OneItemQueue
 
 np.random.seed(42)
 
-Z = 1.0
 sleepRate = 30
 RADII = np.array([0.125, 0.125, 0.375])
 NUM_TARGETS = 2
@@ -30,7 +29,8 @@ FLAG_SHOWELLIPSOIDS = False
 BOUNDING_BOX_WIDTH = 5  # in x/y directions
 TARGET_HEIGHT = 0.3
 TRACKER_MIN_HEIGHT = TARGET_HEIGHT + 2*RADII[2]
-TRACKER_MAX_HEIGHT = 2.5
+TRACKER_MAX_HEIGHT = 2.25
+GOTO_DURATION = 5.0
 
 # Trackers should concentric circles around (0, 0, Z)
 # For roatation, -1 stands for clockwise, 1 for counter-clockwise
@@ -43,7 +43,6 @@ def goCircle(timeHelper, cf, startTime, centerCircle=np.array([0, 0, TARGET_HEIG
         [np.cos(omega * time), np.sin(omega * time), 0])
     errorX = desiredPos - cf.position() 
     cf.cmdVelocityWorld(np.array([vx, vy, 0] + kPosition * errorX), yawRate=0)
-    timeHelper.sleepForRate(sleepRate)
 
 def translateCoords(update_coords, mean_target_x, mean_target_y):
     x = []
@@ -79,6 +78,7 @@ def p1(swarm, update_queue, state_queue, target_ids, tracker_id_map):
     timeHelper = swarm.timeHelper
     allcfs = swarm.allcfs
     byIdDict = allcfs.crazyfliesById
+    tracker_cfs = [byIdDict[tracker_id] for tracker_id in tracker_id_map.keys()]
     inv_tracker_id_map = {v: k for k, v in tracker_id_map.items()}
 
     idx = 0
@@ -91,17 +91,25 @@ def p1(swarm, update_queue, state_queue, target_ids, tracker_id_map):
         timeHelper.visualizer.showEllipsoids(0.95 * RADII)
 
     # for trackers in allcfs.crazyflies[:6]:
-    for tracker_id in list(tracker_id_map.keys()):
-        tracker = byIdDict[tracker_id]
-        tracker.takeoff(targetHeight=TRACKER_MIN_HEIGHT, duration=1.0+Z)
-        tracker.goTo(tracker.initialPosition + np.array([-1, -2, 2]), 0, 2)
-    
+    for tracker in tracker_cfs:
+        tracker.takeoff(targetHeight=TRACKER_MIN_HEIGHT, duration=1.0+TRACKER_MIN_HEIGHT)
+
     # for nonTrackers in allcfs.crazyflies[6:]:
     for non_tracker_id in target_ids:
         nonTracker = byIdDict[non_tracker_id]
-        nonTracker.takeoff(targetHeight=TARGET_HEIGHT, duration=1.0+Z)
+        nonTracker.takeoff(targetHeight=TARGET_HEIGHT, duration=1.0+TARGET_HEIGHT)
 
-    timeHelper.sleep(2+Z)
+    timeHelper.sleep(2 + TRACKER_MIN_HEIGHT)
+
+    initialCentroid = np.mean(
+        [tracker.initialPosition for tracker in tracker_cfs],
+        axis=0
+    )
+    shift = np.array([0.0, 0.0, TRACKER_MIN_HEIGHT]) - initialCentroid
+    for tracker in tracker_cfs:
+        tracker.goTo(tracker.initialPosition + shift, yaw=0.0, duration=GOTO_DURATION)
+
+    timeHelper.sleep(GOTO_DURATION + 1)
 
     startTime = timeHelper.time()
 
@@ -116,9 +124,11 @@ def p1(swarm, update_queue, state_queue, target_ids, tracker_id_map):
             update_cmd = update_queue.get()
             if update_cmd == "END":
                 for cf in allcfs.crazyflies:
-                    cf.goTo(cf.initialPosition + np.array([0, 0, Z]), 0, 5.0)
-                timeHelper.sleep(10.0)
-                allcfs.land(targetHeight=0.06, duration=2.0)
+                    cf.notifySetpointsStop()
+                    cf.goTo(cf.initialPosition + np.array([0, 0, TARGET_HEIGHT]), 0, duration=GOTO_DURATION)
+                # Wait extra long due to collision avoidance contention
+                timeHelper.sleep(GOTO_DURATION * 2)
+                allcfs.land(targetHeight=0.06, duration=TARGET_HEIGHT+1.0)
                 timeHelper.sleep(2.0)
                 break
             else:
@@ -137,12 +147,13 @@ def p1(swarm, update_queue, state_queue, target_ids, tracker_id_map):
                 print(diff_x, diff_y)
                 for drone_id, drone_pos in update_cmd["coords"].items():
                     cf_id = inv_tracker_id_map[drone_id]
+
                     translated_pos = np.array([
                         drone_pos[0] - diff_x,
                         drone_pos[1] - diff_y,
                         drone_pos[2]
                     ])
-                    byIdDict[cf_id].goTo(translated_pos, 0, 5.0)
+                    byIdDict[cf_id].goTo(translated_pos, 0, GOTO_DURATION)
         
         new_state = {}
         for droneId in byIdDict.keys():
