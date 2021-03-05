@@ -12,7 +12,7 @@ import std_msgs
 from crazyflie_driver.srv import *
 from crazyflie_driver.msg import TrajectoryPolynomialPiece, FullState, Position, VelocityWorld
 from tf import TransformListener
-from visualizer import visNull
+from .visualizer import visNull
 
 def arrayToGeometryPoint(a):
     return geometry_msgs.msg.Point(a[0], a[1], a[2])
@@ -381,7 +381,7 @@ class Crazyflie:
         Args:
             params (Dict[str, Any]): Dict of parameter names/values.
         """
-        for name, value in params.iteritems():
+        for name, value in params.items():
             rospy.set_param(self.prefix + "/" + name, value)
         self.updateParamsService(params.keys())
 

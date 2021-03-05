@@ -22,17 +22,13 @@ modules = [
 ]
 fw_sources = [os.path.join(fw_dir, "src/modules/src", mod) for mod in modules]
 
-
 cffirmware = Extension(
     "_cffirmware",
     include_dirs=include,
     sources=fw_sources + ["cffirmware_wrap.c"],
     extra_compile_args=[
         "-O3",
-        # crazyflie-firmware exposes this ARM-only half-precision floating-
-        # point type in headers we require, but we don't need the particular
-        # struct that uses it.
-        "-D __fp16=uint16_t"
+        "-D__fp16=uint16_t",
     ],
 )
 
