@@ -168,7 +168,7 @@ def energyCoverage(config, propose_coords, fov, Rs,
     if target_estimate is not None:
         dist_from_target = np.linalg.norm(node_pos - target_estimate)
         # sum_focus = ph(dist_from_target - fov[i], H)
-        sum_focus = ph(dist_from_target, H)
+        sum_focus = 1.5 * ph(dist_from_target, H)
     else:
         sum_focus = 0
 
