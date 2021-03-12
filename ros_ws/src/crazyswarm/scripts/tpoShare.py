@@ -32,6 +32,11 @@ TRACKER_MIN_HEIGHT = TARGET_HEIGHT + 2*RADII[2]
 TRACKER_MAX_HEIGHT = 2.25
 GOTO_DURATION = 5.0
 
+TRACKER_BOUNDING_BOX = np.array([(-BOUNDING_BOX_WIDTH, BOUNDING_BOX_WIDTH),  # min x, max x
+                                 (-BOUNDING_BOX_WIDTH, BOUNDING_BOX_WIDTH),  # min y, max y
+                                 (TRACKER_MIN_HEIGHT, TRACKER_MAX_HEIGHT)])
+
+
 # Trackers should concentric circles around (0, 0, Z)
 # For roatation, -1 stands for clockwise, 1 for counter-clockwise
 def goCircle(timeHelper, cf, startTime, centerCircle=np.array([0, 0, TARGET_HEIGHT]), totalTime=60, radius=1, kPosition=1, rotation=-1):
@@ -399,10 +404,10 @@ def p3(opt_que, update_queue, weights_queue, network,
 
         mean_x = np.mean(target_x)
         mean_y = np.mean(target_y)
-        min_x = mean_x - BOUNDING_BOX_WIDTH
-        max_x = mean_x + BOUNDING_BOX_WIDTH
-        min_y = mean_y - BOUNDING_BOX_WIDTH
-        max_y = mean_y + BOUNDING_BOX_WIDTH
+        min_x = max(mean_x - BOUNDING_BOX_WIDTH, TRACKER_BOUNDING_BOX[0][0])
+        max_x = min(mean_x + BOUNDING_BOX_WIDTH, TRACKER_BOUNDING_BOX[0][1])
+        min_y = max(mean_y - BOUNDING_BOX_WIDTH, TRACKER_BOUNDING_BOX[1][0])
+        max_y = min(mean_y + BOUNDING_BOX_WIDTH, TRACKER_BOUNDING_BOX[1][1])
         print((min_x, max_x), (min_y, max_y))
 
         for id, n in nodes.items():
@@ -442,8 +447,10 @@ def p3(opt_que, update_queue, weights_queue, network,
                                                             (min_y, max_y),
                                                             (TRACKER_MIN_HEIGHT,
                                                              TRACKER_MAX_HEIGHT)]),
-                                             delta=3, safe_dist=1, connect_dist=2,
-                                             target_estimate=np.array([[min_x], [min_y]]))
+                                             # bbox = TRACKER_BOUNDING_BOX,
+                                             delta=3*np.max(RADII), safe_dist=np.min(RADII), connect_dist=3*np.max(RADII),
+                                             target_estimate=np.array([[mean_x], [mean_y]]),
+                                             lax=False)
             new_config = network.adjacency_matrix()
             new_weights = current_weights
         else:
@@ -462,10 +469,10 @@ def p3(opt_que, update_queue, weights_queue, network,
                                                             (
                                                             TRACKER_MIN_HEIGHT,
                                                             TRACKER_MAX_HEIGHT)]),
-                                             delta=3, safe_dist=1,
-                                             connect_dist=2,
-                                             target_estimate=np.array(
-                                                 [[min_x], [min_y]]))
+                                             # bbox=TRACKER_BOUNDING_BOX,
+                                             delta=3*np.max(RADII), safe_dist=np.min(RADII), connect_dist=3*np.max(RADII),
+                                             target_estimate=np.array([[mean_x], [mean_y]]),
+                                             lax=False)
             nx.set_node_attributes(network.network, new_weights, 'weights')
 
         print("p3 sending coords")

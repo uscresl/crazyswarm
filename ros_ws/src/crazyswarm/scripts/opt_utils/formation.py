@@ -23,13 +23,14 @@ def generate_coords(new_config, current_coords, fov, Rs,
     :return:
     """
 
-    invalid_iters_limit = 1
+    invalid_iters_limit = 0
 
     # Simulated Annealing
     H = np.logspace(1, 3, steps)
     temperature = np.logspace(1, -8, steps)
 
     new_coords = current_coords
+    current_valid_config = current_coords
     valid_config = False
     invalid_configs = 0
     while not valid_config:
@@ -54,16 +55,20 @@ def generate_coords(new_config, current_coords, fov, Rs,
                     new_coords = deepcopy(propose_coords)
             del propose_coords
 
-        valid_config = isValidConfig(new_config, new_coords,
-                                     safe_dist, connect_dist, bbox)
+            valid_config = isValidConfig(new_config, new_coords,
+                                         safe_dist, connect_dist, bbox)
+            if valid_config:
+                current_valid_config = new_coords
+
         if not valid_config:
+            print('invalid config, trying again')
             invalid_configs = invalid_configs + 1
         if invalid_configs > invalid_iters_limit:
             print('could not find valid config')
             if lax:
                 return new_coords, propSQ
             else:
-                return False
+                return current_valid_config, propSQ
 
     return new_coords, propSQ
 
@@ -191,14 +196,14 @@ def isValidConfig(config, coords, safe_dist, connect_dist, bbox):
     for i in range(n):
         # Check Position is within BBox
         x, y, z = coords[i]
-        if not (bbox[0, 0] <= x <= bbox[0, 1]):
-            print("x pos not in bbox")
+        if not (bbox[0, 0] <= round(x, 2) <= bbox[0, 1]):
+            # print("x pos not in bbox {x}".format(x=x))
             return False
-        if not (bbox[1, 0] <= y <= bbox[1, 1]):
-            print("y pos not in bbox")
+        if not (bbox[1, 0] <= round(y, 2) <= bbox[1, 1]):
+            # print("y pos not in bbox {x}".format(x=y))
             return False
-        if not (bbox[2, 0] <= z <= bbox[2, 1]):
-            print("z pos not in bbox")
+        if not (bbox[2, 0] <= round(z, 2) <= bbox[2, 1]):
+            # print("z pos not in bbox {x}".format(x=z))
             return False
 
         for j in range(i + 1, n):
@@ -206,16 +211,16 @@ def isValidConfig(config, coords, safe_dist, connect_dist, bbox):
 
             # If Neighbors, check if between safe_dist and connect_dist
             if config[i, j] > 0:
-                if not (safe_dist <= d <= connect_dist):
-                    print(
-                        'too close or too far from connection, {i}-{j}'.format(
-                            i=i, j=j))
+                if not (safe_dist <= round(d, 1) <= 1.2 * connect_dist):
+                    # print(
+                    #     'too close or too far from connection, {i}-{j}, {d}'.format(
+                    #         i=i, j=j, d=d))
                     return False
             # If not, check if greater than connect_dist
             else:
-                if not (connect_dist <= d):
-                    print(
-                        'too close to neighbor, {i}-{j}'.format(i=i, j=j))
+                if not ((.8 * connect_dist) <= round(d, 1)):
+                    # print(
+                    #     'too close to neighbor, {i}-{j}, {d}'.format(i=i, j=j, d=d))
                     return False
     return True
 
